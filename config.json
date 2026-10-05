@@ -1,0 +1,44 @@
+{
+  "_help": "Every setting is optional - anything you delete falls back to the default. See README.md.",
+
+  "websites_file": "websites.json",
+
+  "max_pages": 200,
+  "max_depth": 8,
+  "max_assets": 200,
+  "site_time_limit": 1800,
+
+  "timeout": 20,
+  "retries": 2,
+  "concurrency": 4,
+  "max_concurrent_sites": 6,
+  "per_host_concurrency": 3,
+  "delay": 0.25,
+  "user_agent": "WebsiteHealthMonitor/1.0 (+personal uptime checker)",
+  "respect_robots": true,
+
+  "ignore_query": false,
+  "ignored_query_params": ["utm_*", "fbclid", "gclid", "msclkid", "mc_cid", "mc_eid", "_ga"],
+  "max_query_variants": 5,
+  "allowed_domains": [],
+  "include_subdomains": false,
+  "allow_patterns": [],
+  "ignore_patterns": ["/wp-admin", "/wp-login\\.php", "/cdn-cgi/", "logout"],
+
+  "check_assets": true,
+  "check_external_images": true,
+  "check_external_links": false,
+
+  "slow_threshold": 5.0,
+  "max_redirect_chain": 2,
+
+  "expected_redirects": {
+    "http_to_https": true,
+    "www_redirects": true,
+    "trailing_slash": true,
+    "allowed_cross_domains": [],
+    "rules": []
+  },
+
+  "reports_dir": "reports"
+}
