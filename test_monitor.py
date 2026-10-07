@@ -22,12 +22,15 @@ import unittest
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from checker import Checker, HostThrottle, categorize_redirect, hop_is_expected, make_client  # noqa: E402
+from alerts import AlertError, send_alert  # noqa: E402
 from config import load_config, load_websites, site_config, ConfigError  # noqa: E402
 from crawler import SiteCrawler, extract_page_info  # noqa: E402
+from models import SiteReport, UrlResult  # noqa: E402
 import reporter  # noqa: E402
 from urlutils import clean_url, dedupe_key  # noqa: E402
 
@@ -342,6 +345,68 @@ class PureLogicTests(unittest.TestCase):
         self.assertEqual(cfg["max_pages"], 200)
         sites = load_websites(cfg, Path(__file__).resolve().parent.parent / "websites.json")
         self.assertTrue(sites)
+
+
+class AlertTests(unittest.TestCase):
+    def test_sends_mail_for_down_sites_and_cross_domain_redirects(self):
+        report = SiteReport(website="https://example.com")
+        report.results.extend([
+            UrlResult(
+                website=report.website, url=report.website, is_start=True,
+                error_type="connection_error",
+            ),
+            UrlResult(
+                website=report.website, url=report.website + "/old",
+                final_url="https://other.example/landing",
+                redirect_category="cross_domain",
+            ),
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, ".env").write_text(
+                "WEBSITE_MONITOR_EMAIL_TO=owner@example.com\n"
+                "WEBSITE_MONITOR_SMTP_USERNAME=sender@example.com\n"
+                "WEBSITE_MONITOR_SMTP_PASSWORD=app-password\n",
+                encoding="utf-8",
+            )
+            with patch("alerts.smtplib.SMTP") as smtp_factory:
+                smtp = smtp_factory.return_value.__enter__.return_value
+                self.assertTrue(send_alert([report], Path(directory)))
+
+        smtp_factory.assert_called_once_with("smtp.gmail.com", 587, timeout=30)
+        smtp.starttls.assert_called_once()
+        smtp.login.assert_called_once_with("sender@example.com", "app-password")
+        message = smtp.send_message.call_args.args[0]
+        self.assertIn("DOWN: https://example.com", message.get_content())
+        self.assertIn("https://example.com/old -> https://other.example/landing",
+                      message.get_content())
+
+    def test_missing_smtp_password_is_reported(self):
+        report = SiteReport(
+            website="https://example.com",
+            results=[UrlResult(
+                website="https://example.com", url="https://example.com",
+                is_start=True, error_type="connection_error",
+            )],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, ".env").write_text(
+                "WEBSITE_MONITOR_EMAIL_TO=owner@example.com\n"
+                "WEBSITE_MONITOR_SMTP_USERNAME=sender@example.com\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(AlertError, "WEBSITE_MONITOR_SMTP_PASSWORD"):
+                send_alert([report], Path(directory))
+
+    def test_healthy_reports_do_not_send_email(self):
+        report = SiteReport(
+            website="https://example.com",
+            results=[UrlResult(
+                website="https://example.com", url="https://example.com",
+                is_start=True, status=200,
+            )],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertFalse(send_alert([report], Path(directory)))
 
 
 class SslTests(unittest.IsolatedAsyncioTestCase):

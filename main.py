@@ -16,6 +16,7 @@ import webbrowser
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
+from alerts import AlertError, send_alert
 from checker import HostThrottle, make_client
 from config import BASE_DIR, ConfigError, load_config, load_websites, site_config
 from crawler import SiteCrawler
@@ -90,11 +91,18 @@ def main(argv: List[str] = None) -> int:
 
     paths = reporter.write_reports(reports, cfg, started, finished, BASE_DIR)
     reporter.print_terminal(reports, cfg, paths, started, finished)
+    alert_failed = False
+    try:
+        if send_alert(reports, BASE_DIR):
+            log("Email alert sent.")
+    except AlertError as exc:
+        print("Alert error: %s" % exc, file=sys.stderr)
+        alert_failed = True
     if args.open:
         webbrowser.open(paths["html"].resolve().as_uri())
 
     has_errors = any(r.errors() for r in reports)
-    return 0 if (args.exit_zero or not has_errors) else 1
+    return 1 if alert_failed else (0 if (args.exit_zero or not has_errors) else 1)
 
 
 if __name__ == "__main__":

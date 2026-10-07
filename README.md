@@ -6,6 +6,7 @@ Runs locally on your Mac. No paid services.
 ```
 website-monitor/
 ├── main.py              entry point (CLI)
+├── alerts.py            email alerts for outages and cross-domain redirects
 ├── crawler.py           queue-based crawler: link discovery, robots.txt, limits
 ├── checker.py           checks one URL: redirect chain, errors, retries, throttling
 ├── reporter.py          terminal summary, HTML report, CSV
@@ -14,8 +15,9 @@ website-monitor/
 ├── config.json          your settings
 ├── websites.json        your list of sites
 ├── run.command          double-click launcher for macOS
-├── scripts/             install/uninstall the daily schedule
-├── tests/               automated tests (local test server)
+├── install_daily.sh     install hourly schedule (legacy filename)
+├── uninstall_daily.sh   remove the scheduled job
+├── test_monitor.py      automated tests (local test server)
 └── reports/             output (YYYY-MM-DD-HH-MM-report.html / .csv, latest-report.html)
 ```
 
@@ -95,23 +97,37 @@ Then double-click it in Finder. On first run it creates `.venv` and installs the
 opens the HTML report and waits for a key press before closing. If macOS says it can't verify the developer,
 right-click the file → **Open** → **Open** (only needed the first time).
 
-## Daily automation (launchd)
+## Hourly automation (GitHub Actions)
 
-After installation:
+The workflow in `.github/workflows/hourly-monitor.yml` runs hourly on GitHub's
+servers, even while your Mac is off. GitHub may delay scheduled workflows during
+busy periods. Commit and push the workflow to the repository's default branch;
+the schedule will then appear under **Actions**. To enable email alerts, add
+these repository Actions secrets under
+**Settings → Secrets and variables → Actions → New repository secret**:
 
-```bash
-chmod +x scripts/install_daily.sh
-scripts/install_daily.sh            # every day at 07:30
-scripts/install_daily.sh 6 0        # or pick a time, e.g. 06:00
-```
+| Secret name | Value |
+|---|---|
+| `WEBSITE_MONITOR_EMAIL_TO` | `zaroonalichishti@gmail.com` |
+| `WEBSITE_MONITOR_SMTP_USERNAME` | Your Gmail address |
+| `WEBSITE_MONITOR_SMTP_PASSWORD` | A Gmail [App Password](https://support.google.com/accounts/answer/185833), not your regular account password |
 
-* Runs `main.py --exit-zero` using the project's `.venv`, even if you're not at the Mac (you must be logged in; if the Mac is asleep, launchd runs the job when it wakes).
-* Latest report: `reports/latest-report.html` · Logs: `logs/launchd.out.log`, `logs/launchd.err.log`
-* Run it now: `launchctl kickstart -k gui/$(id -u)/com.website-monitor.daily`
-* Remove: `scripts/uninstall_daily.sh`
-* Tip: keep the project in your home folder (e.g. `~/website-monitor`). Folders like Desktop/Documents may trigger macOS privacy prompts for background jobs.
+The SMTP host defaults to Gmail on port 587, and the sender defaults to the
+SMTP username. A different provider can be configured by adding the
+`WEBSITE_MONITOR_SMTP_HOST`, `WEBSITE_MONITOR_SMTP_PORT`, and
+`WEBSITE_MONITOR_EMAIL_FROM` secrets and mapping them in the workflow.
 
-`cron` also works: `30 7 * * * cd /path/to/website-monitor && .venv/bin/python main.py --exit-zero`
+The workflow emails when a monitored homepage is down or any checked URL
+redirects to a different domain. Expected redirects such as HTTP→HTTPS do not
+trigger an alert. Use the **Actions** tab to run it manually with
+**Hourly website monitor → Run workflow**. Reports from hosted runs are in the
+Actions run logs; generated files are not copied back into the repository.
+
+For local-only scheduling instead, `./install_daily.sh` installs a macOS
+`launchd` job that runs hourly while your Mac is on; it cannot run while the Mac
+is shut down. The local schedule can be removed with `./uninstall_daily.sh`.
+For local email configuration, copy `.env.example` to `.env` and keep the
+file private; `.env` is excluded from version control.
 
 ## Configuration
 
@@ -195,7 +211,7 @@ the report says how many pages were found but not checked.
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -v
+python -m unittest test_monitor -v
 ```
 
 A local test server simulates 200, 301, multi-hop redirects, redirect loops, cross-domain redirects, 403/404/500, timeouts, 503-then-200
